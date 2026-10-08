@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BiciDashboard</title>
+    <style>
+        :root {
+            --bg-color: #121212;
+            --card-bg: #1e1e1e;
+            --accent: #00e676;
+            --text-color: #ffffff;
+            --subtext: #b0bec5;
+            --danger: #ff5252;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 16px;
+            box-sizing: border-box;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            font-size: 1.4rem;
+            margin: 0;
+            color: var(--accent);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .card {
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            padding: 16px;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+        }
+
+        .full-width {
+            grid-column: span 2;
+        }
+
+        .metric-title {
+            font-size: 0.8rem;
+            color: var(--subtext);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--accent);
+        }
+
+        .metric-unit {
+            font-size: 0.9rem;
+            color: var(--subtext);
+        }
+
+        button {
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            padding: 12px;
+            border-radius: 8px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            width: 100%;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+
+        button.danger {
+            background-color: var(--danger);
+            color: #fff;
+        }
+
+        .quick-actions {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .action-link {
+            display: block;
+            background: var(--card-bg);
+            color: var(--text-color);
+            text-decoration: none;
+            padding: 14px;
+            border-radius: 10px;
+            text-align: center;
+            font-weight: bold;
+            border: 1px solid #333;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 8px;
+            margin: 6px 0;
+            border-radius: 6px;
+            border: 1px solid #444;
+            background: #2a2a2a;
+            color: #fff;
+            box-sizing: border-box;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <h1>🚴 Bike Dashboard</h1>
+    </header>
+
+    <!-- Velocímetro y Distancia GPS -->
+    <div class="grid">
+        <div class="card full-width">
+            <div class="metric-title">Velocidad Actual</div>
+            <div class="metric-value" id="speed">0.0</div>
+            <div class="metric-unit">km/h</div>
+            <button id="gpsBtn" onclick="toggleGPS()">Activar GPS / Velocímetro</button>
+        </div>
+
+        <div class="card">
+            <div class="metric-title">Distancia</div>
+            <div class="metric-value" id="distance" style="font-size: 1.8rem;">0.00</div>
+            <div class="metric-unit">km</div>
+        </div>
+
+        <div class="card">
+            <div class="metric-title">Tiempo</div>
+            <div class="metric-value" id="timer" style="font-size: 1.8rem;">00:00</div>
+            <div class="metric-unit">min:seg</div>
+        </div>
+    </div>
+
+    <!-- Calculadora de Relación de Marchas (Relación Plato/Piñón) -->
+    <div class="card full-width" style="margin-bottom: 16px;">
+        <div class="metric-title">Calculadora de Transmisión</div>
+        <div style="display: flex; gap: 8px;">
+            <input type="number" id="chainring" placeholder="Plato (ej: 32)" value="32">
+            <input type="number" id="cog" placeholder="Piñón (ej: 18)" value="18">
+        </div>
+        <button onclick="calculateRatio()">Calcular Ratio</button>
+        <div id="ratioResult" style="margin-top: 8px; font-weight: bold; color: var(--accent);">
+            Relación: 1.78 vueltas de rueda por pedaleo
+        </div>
+    </div>
+
+    <!-- Accesos Rápidos Esenciales -->
+    <div class="quick-actions">
+        <a href="https://www.google.com/maps" target="_blank" class="action-link">🗺️ Google Maps</a>
+        <a href="tel:911" class="action-link" style="color: var(--danger); border-color: var(--danger);">🚨 Emergencia</a>
+    </div>
+
+    <script>
+        let watchId = null;
+        let totalDistance = 0;
+        let lastPos = null;
+        let timerInterval = null;
+        let seconds = 0;
+
+        // GPS y Velocímetro
+        function toggleGPS() {
+            const btn = document.getElementById('gpsBtn');
+            if (watchId === null) {
+                if ("geolocation" in navigator) {
+                    watchId = navigator.geolocation.watchPosition(updatePosition, handleError, {
+                        enableHighAccuracy: true,
+                        maximumAge: 1000
+                    });
+                    startTimer();
+                    btn.innerText = "Detener Seguimiento";
+                    btn.classList.add('danger');
+                } else {
+                    alert("Tu navegador no soporta geolocalización.");
+                }
+            } else {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+                stopTimer();
+                btn.innerText = "Activar GPS / Velocímetro";
+                btn.classList.remove('danger');
+            }
+        }
+
+        function updatePosition(pos) {
+            // Velocidad de m/s a km/h
+            let speed = pos.coords.speed;
+            if (speed === null || speed < 0) speed = 0;
+            let kmh = (speed * 3.6).toFixed(1);
+            document.getElementById('speed').innerText = kmh;
+
+            // Cálculo de distancia recorrida
+            if (lastPos) {
+                let dist = getDistance(
+                    lastPos.coords.latitude, lastPos.coords.longitude,
+                    pos.coords.latitude, pos.coords.longitude
+                );
+                // Filtrar ruido de GPS en parado
+                if (kmh > 1.0) {
+                    totalDistance += dist;
+                    document.getElementById('distance').innerText = totalDistance.toFixed(2);
+                }
+            }
+            lastPos = pos;
+        }
+
+        function handleError(err) {
+            console.warn('ERROR GPS(' + err.code + '): ' + err.message);
+        }
+
+        // Haversine formula para calcular distancia entre dos coordenadas en km
+        function getDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2 - lat1) * Math.PI / 180;
+            const dLon = (lon2 - lon1) * Math.PI / 180;
+            const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+                      Math.sin(dLon/2) * Math.sin(dLon/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        // Cronómetro
+        function startTimer() {
+            if (!timerInterval) {
+                timerInterval = setInterval(() => {
+                    seconds++;
+                    let mins = Math.floor(seconds / 60);
+                    let secs = seconds % 60;
+                    document.getElementById('timer').innerText = 
+                        `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+                }, 1000);
+            }
+        }
+
+        function stopTimer() {
+            clearInterval(timerInterval);
+            timerInterval = null;
+        }
+
+        // Calculadora de transmisión
+        function calculateRatio() {
+            const teethFront = parseFloat(document.getElementById('chainring').value);
+            const teethRear = parseFloat(document.getElementById('cog').value);
+            
+            if (teethFront > 0 && teethRear > 0) {
+                const ratio = (teethFront / teethRear).toFixed(2);
+                document.getElementById('ratioResult').innerText = `Relación: ${ratio} vueltas de rueda por pedalada`;
+            } else {
+                document.getElementById('ratioResult').innerText = 'Ingresa números válidos';
+            }
+        }
+    </script>
+</body>
+</html>
